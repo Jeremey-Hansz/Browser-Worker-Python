@@ -216,14 +216,30 @@ def run_extract_products(category_urls: List[str]) -> dict:
         all_urls = set()
 
         for category_url in category_urls:
+            print(f"Loading category: {category_url}")
             page.goto(category_url, wait_until="networkidle", timeout=60000)
-            try:
-                page.wait_for_selector('a[href*="/product/"]', state="attached", timeout=10000)
-            except Exception:
-                print(f"No product links attached on {category_url}")
+            page.wait_for_timeout(3000)
+
+            print("Current URL:", page.url)
+            print("Page title:", page.title())
+
+            all_hrefs = page.locator("a").evaluate_all("""
+                elements => elements
+                    .map(el => el.getAttribute("href"))
+                    .filter(Boolean)
+            """)
+
+            print("Total anchors:", len(all_hrefs))
+            print("Sample hrefs:", all_hrefs[:30])
+
+            for _ in range(5):
+                page.mouse.wheel(0, 5000)
+                page.wait_for_timeout(1500)
 
             links = extract_links(page, category_url)
             print(f"Found {len(links)} links on {category_url}")
+            print("Sample product links:", links[:20])
+
             for url in links:
                 all_urls.add(url)
 
