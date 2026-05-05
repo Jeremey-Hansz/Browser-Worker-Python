@@ -1,0 +1,13 @@
+def build_proxy():
+    if not PROXY_SERVER:
+        return None
+
+    proxy = {"server": PROXY_SERVER}
+
+    if PROXY_USERNAME:
+        proxy["username"] = PROXY_USERNAME
+
+    if PROXY_PASSWORD:
+        proxy["password"] = PROXY_PASSWORD
+
+    return proxy

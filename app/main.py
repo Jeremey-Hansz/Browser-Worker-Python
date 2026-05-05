@@ -1,4 +1,3 @@
-# app/main.py
 import os
 from typing import List, Optional
 
@@ -6,11 +5,9 @@ from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel, HttpUrl
 from dotenv import load_dotenv
 
-from app.extract_products import run_extract_products  # you’ll create this
+from app.extract_products import run_plnts_scrape
 
 load_dotenv()
-
-SCRAPER_TOKEN = os.getenv("SCRAPER_TOKEN")  # optional shared secret for n8n
 
 app = FastAPI(title="PlantHub Scraper Service")
 
@@ -34,6 +31,7 @@ class ScrapeResponse(BaseModel):
     products: List[dict]
     errors: List[ScrapeError]
 
+
 @app.get("/health")
 def health():
     return {"status": "ok"}
@@ -41,11 +39,6 @@ def health():
 
 @app.post("/scrape/plnts", response_model=ScrapeResponse)
 def scrape_plnts(req: ScrapeRequest):
-    # Optional token check so only n8n (or you) can call this
-    if SCRAPER_TOKEN and req.token != SCRAPER_TOKEN:
-        raise HTTPException(status_code=401, detail="Invalid token")
-
-    # Fallback to default category if none provided
     category_urls = (
         [str(u) for u in req.categoryUrls]
         if req.categoryUrls
@@ -53,7 +46,7 @@ def scrape_plnts(req: ScrapeRequest):
     )
 
     try:
-        result = run_extract_products(category_urls)  # you implement this
+        result = run_plnts_scrape(category_urls)
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Scrape failed: {e}")
 

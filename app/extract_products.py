@@ -1,18 +1,33 @@
 import os
 import re
-import json
-import time
+from typing import List
 from urllib.parse import urljoin, urlparse, urlunparse
 
-import requests
 from dotenv import load_dotenv
 from playwright.sync_api import sync_playwright
-from typing import List
 
 load_dotenv()
 
-WEBHOOK_URL = os.getenv("BACKEND_WEBHOOK_URL", "https://planthub-backend-psfe.onrender.com/webhooks/scraper/products")
-WEBHOOK_SECRET = os.getenv("WEBHOOK_SCRAPER_SECRET")
+PROXY_SERVER = os.getenv("PROXY_SERVER")
+PROXY_USERNAME = os.getenv("PROXY_USERNAME")
+PROXY_PASSWORD = os.getenv("PROXY_PASSWORD")
+
+
+def build_proxy():
+    if not PROXY_SERVER:
+        return None
+
+    proxy = {
+        "server": PROXY_SERVER
+    }
+
+    if PROXY_USERNAME:
+        proxy["username"] = PROXY_USERNAME
+
+    if PROXY_PASSWORD:
+        proxy["password"] = PROXY_PASSWORD
+
+    return proxy
 
 CATEGORY_URLS = [
     "https://plnts.com/nl/shop/all-plnts",
@@ -37,6 +52,25 @@ SIZE_LABELS = {
     "xxxl": "XXXL",
     "default": "Default",
 }
+
+
+def build_proxy():
+    server = os.getenv("PROXY_SERVER")
+    username = os.getenv("PROXY_USERNAME")
+    password = os.getenv("PROXY_PASSWORD")
+
+    if not server:
+        return None
+
+    proxy = {"server": server}
+
+    if username:
+        proxy["username"] = username
+
+    if password:
+        proxy["password"] = password
+
+    return proxy
 
 
 def normalize_url(href: str, base_url: str) -> str | None:
@@ -101,6 +135,7 @@ def is_valid_product_url(url: str) -> bool:
 
 def extract_links(page, base_url: str):
     found = set()
+
     for selector in PRODUCT_LINK_SELECTORS:
         try:
             items = page.locator(selector).evaluate_all("""
@@ -116,9 +151,11 @@ def extract_links(page, base_url: str):
             href = item.get("href")
             if not href:
                 continue
+
             absolute = normalize_url(href, base_url)
             if is_valid_product_url(absolute):
                 found.add(absolute)
+
     return list(found)
 
 
@@ -137,7 +174,12 @@ def extract_product_data(page, url: str):
     size_key = extract_size_key(url)
     size_label = to_size_label(size_key)
 
-    name = page.locator("h1").first.text_content(timeout=2000).strip()
+    name = "Unknown"
+    try:
+        name = page.locator("h1").first.text_content(timeout=3000).strip()
+    except Exception:
+        pass
+
     price_text = ""
     try:
         price_text = (
@@ -145,7 +187,7 @@ def extract_product_data(page, url: str):
             .first
             .locator('xpath=following::section[1]//div[contains(@class,"flex-row") and contains(@class,"gap-2")]//span[1]')
             .first
-            .text_content(timeout=2000)
+            .text_content(timeout=3000)
             .strip()
         )
     except Exception:
@@ -189,30 +231,21 @@ def extract_product_data(page, url: str):
     }
 
 
-def post_to_webhook(product: dict) -> bool:
-    headers = {
-        "Content-Type": "application/json",
-        "X-Webhook-Secret": WEBHOOK_SECRET,
-    }
-    r = requests.post(WEBHOOK_URL, headers=headers, data=json.dumps(product), timeout=30)
-    if r.ok:
-        print(f"✅ Saved: {product['name']} (€{product['minPrice']})")
-        print("Response:", r.text)
-        return True
-    print(f"❌ Failed {product['canonicalUrl']}: {r.status_code}")
-    print("Response body:", r.text)
-    return False
-
-def run_extract_products(category_urls: List[str]) -> dict:
+def run_plnts_scrape(category_urls: List[str]) -> dict:
     products = []
     errors = []
     success_count = 0
     fail_count = 0
 
     with sync_playwright() as p:
-        browser = p.chromium.launch(headless=True)
-        page = browser.new_page()
+        proxy = build_proxy()
 
+        browser = p.chromium.launch(
+            headless=True,
+            proxy=proxy
+        )
+
+        page = browser.new_page()
         all_urls = set()
 
         for category_url in category_urls:
@@ -264,45 +297,8 @@ def run_extract_products(category_urls: List[str]) -> dict:
 
 
 def run():
-    print("SCRIPT STARTED")
-    print("SECRET LOADED?", bool(WEBHOOK_SECRET))
-
-    with sync_playwright() as p:
-        browser = p.chromium.launch(headless=True)
-        page = browser.new_page()
-        all_urls = set()
-
-        for category_url in CATEGORY_URLS:
-            print(f"\n📁 Crawling category: {category_url}")
-            page.goto(category_url, wait_until="domcontentloaded", timeout=60000)
-            page.wait_for_timeout(3000)
-
-            links = extract_links(page, category_url)
-            for url in links:
-                all_urls.add(url)
-
-            print(f"Found {len(links)} products in this category")
-
-        print(f"\n🚀 Found {len(all_urls)} total unique product URLs")
-
-        success_count = 0
-        fail_count = 0
-
-        for i, url in enumerate(sorted(all_urls), start=1):
-            print(f"\n[{i}/{len(all_urls)}] Processing: {url}")
-            try:
-                product = extract_product_data(page, url)
-                if post_to_webhook(product):
-                    success_count += 1
-                else:
-                    fail_count += 1
-                time.sleep(0.5)
-            except Exception as e:
-                print(f"❌ Failed to extract {url}: {e}")
-                fail_count += 1
-
-        print(f"\n🎉 Done! Success: {success_count}, Failed: {fail_count}")
-        browser.close()
+    result = run_plnts_scrape(CATEGORY_URLS)
+    print(result)
 
 
 if __name__ == "__main__":
