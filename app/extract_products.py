@@ -217,8 +217,13 @@ def run_extract_products(category_urls: List[str]) -> dict:
 
         for category_url in category_urls:
             page.goto(category_url, wait_until="networkidle", timeout=60000)
-            page.wait_for_selector('a[href*="/product/"]', timeout=10000)
+            try:
+                page.wait_for_selector('a[href*="/product/"]', state="attached", timeout=10000)
+            except Exception:
+                print(f"No product links attached on {category_url}")
+
             links = extract_links(page, category_url)
+            print(f"Found {len(links)} links on {category_url}")
             for url in links:
                 all_urls.add(url)
 
