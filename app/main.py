@@ -18,7 +18,6 @@ app = FastAPI(title="PlantHub Scraper Service")
 class ScrapeRequest(BaseModel):
     shopCode: str = "PLNTS_NL"
     categoryUrls: Optional[List[HttpUrl]] = None
-    token: Optional[str] = None
 
 
 class ScrapeError(BaseModel):
