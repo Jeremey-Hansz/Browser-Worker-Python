@@ -35,6 +35,10 @@ class ScrapeResponse(BaseModel):
     products: List[dict]
     errors: List[ScrapeError]
 
+@app.get("/health")
+def health():
+    return {"status": "ok"}
+
 
 @app.post("/scrape/plnts", response_model=ScrapeResponse)
 def scrape_plnts(req: ScrapeRequest):
