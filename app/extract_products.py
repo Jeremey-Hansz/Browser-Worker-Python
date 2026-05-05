@@ -216,15 +216,19 @@ def run_extract_products(category_urls: List[str]) -> dict:
         all_urls = set()
 
         for category_url in category_urls:
+            print(f"Loading category: {category_url}")
             page.goto(category_url, wait_until="networkidle", timeout=60000)
             page.wait_for_timeout(5000)
 
             try:
                 page.wait_for_selector('a[href*="/product/"]', timeout=10000)
             except Exception:
-                pass
+                print("No product selector appeared")
 
             links = extract_links(page, category_url)
+            print(f"Extracted {len(links)} links from category")
+            print("Sample links:", links[:10])
+
             for url in links:
                 all_urls.add(url)
             links = extract_links(page, category_url)
