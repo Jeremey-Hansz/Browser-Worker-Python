@@ -216,8 +216,17 @@ def run_extract_products(category_urls: List[str]) -> dict:
         all_urls = set()
 
         for category_url in category_urls:
-            page.goto(category_url, wait_until="domcontentloaded", timeout=60000)
-            page.wait_for_timeout(3000)
+            page.goto(category_url, wait_until="networkidle", timeout=60000)
+            page.wait_for_timeout(5000)
+
+            try:
+                page.wait_for_selector('a[href*="/product/"]', timeout=10000)
+            except Exception:
+                pass
+
+            links = extract_links(page, category_url)
+            for url in links:
+                all_urls.add(url)
             links = extract_links(page, category_url)
             for url in links:
                 all_urls.add(url)
