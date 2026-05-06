@@ -1,37 +1,9 @@
-import os
 import re
-from typing import List
 from urllib.parse import urljoin, urlparse, urlunparse
 
-from dotenv import load_dotenv
 from playwright.sync_api import sync_playwright
+from typing import List
 
-load_dotenv()
-
-PROXY_SERVER = os.getenv("PROXY_SERVER")
-PROXY_USERNAME = os.getenv("PROXY_USERNAME")
-PROXY_PASSWORD = os.getenv("PROXY_PASSWORD")
-
-
-def build_proxy():
-    if not PROXY_SERVER:
-        return None
-
-    proxy = {
-        "server": PROXY_SERVER
-    }
-
-    if PROXY_USERNAME:
-        proxy["username"] = PROXY_USERNAME
-
-    if PROXY_PASSWORD:
-        proxy["password"] = PROXY_PASSWORD
-
-    return proxy
-
-CATEGORY_URLS = [
-    "https://plnts.com/nl/shop/all-plnts",
-]
 
 PRODUCT_LINK_SELECTORS = [
     'a[href*="/product/"]',
@@ -52,25 +24,6 @@ SIZE_LABELS = {
     "xxxl": "XXXL",
     "default": "Default",
 }
-
-
-def build_proxy():
-    server = os.getenv("PROXY_SERVER")
-    username = os.getenv("PROXY_USERNAME")
-    password = os.getenv("PROXY_PASSWORD")
-
-    if not server:
-        return None
-
-    proxy = {"server": server}
-
-    if username:
-        proxy["username"] = username
-
-    if password:
-        proxy["password"] = password
-
-    return proxy
 
 
 def normalize_url(href: str, base_url: str) -> str | None:
@@ -135,7 +88,6 @@ def is_valid_product_url(url: str) -> bool:
 
 def extract_links(page, base_url: str):
     found = set()
-
     for selector in PRODUCT_LINK_SELECTORS:
         try:
             items = page.locator(selector).evaluate_all("""
@@ -151,7 +103,6 @@ def extract_links(page, base_url: str):
             href = item.get("href")
             if not href:
                 continue
-
             absolute = normalize_url(href, base_url)
             if is_valid_product_url(absolute):
                 found.add(absolute)
@@ -174,11 +125,7 @@ def extract_product_data(page, url: str):
     size_key = extract_size_key(url)
     size_label = to_size_label(size_key)
 
-    name = "Unknown"
-    try:
-        name = page.locator("h1").first.text_content(timeout=3000).strip()
-    except Exception:
-        pass
+    name = page.locator("h1").first.text_content(timeout=2000).strip()
 
     price_text = ""
     try:
@@ -187,7 +134,7 @@ def extract_product_data(page, url: str):
             .first
             .locator('xpath=following::section[1]//div[contains(@class,"flex-row") and contains(@class,"gap-2")]//span[1]')
             .first
-            .text_content(timeout=3000)
+            .text_content(timeout=2000)
             .strip()
         )
     except Exception:
@@ -231,48 +178,28 @@ def extract_product_data(page, url: str):
     }
 
 
-def run_plnts_scrape(category_urls: List[str]) -> dict:
+def run_extract_products(category_urls: List[str], shop_code: str = "PLNTS_NL") -> dict:
     products = []
     errors = []
     success_count = 0
     fail_count = 0
 
     with sync_playwright() as p:
-        proxy = build_proxy()
-
-        browser = p.chromium.launch(
-            headless=True,
-            proxy=proxy
-        )
-
+        browser = p.chromium.launch(headless=True)
         page = browser.new_page()
         all_urls = set()
 
         for category_url in category_urls:
-            print(f"Loading category: {category_url}")
             page.goto(category_url, wait_until="networkidle", timeout=60000)
-            page.wait_for_timeout(3000)
-
-            print("Current URL:", page.url)
-            print("Page title:", page.title())
-
-            all_hrefs = page.locator("a").evaluate_all("""
-                elements => elements
-                    .map(el => el.getAttribute("href"))
-                    .filter(Boolean)
-            """)
-
-            print("Total anchors:", len(all_hrefs))
-            print("Sample hrefs:", all_hrefs[:30])
-
-            for _ in range(5):
-                page.mouse.wheel(0, 5000)
-                page.wait_for_timeout(1500)
+            try:
+                page.wait_for_selector('a[href*="/product/"]', state="attached", timeout=10000)
+            except Exception:
+                errors.append({
+                    "url": category_url,
+                    "message": "No product links attached"
+                })
 
             links = extract_links(page, category_url)
-            print(f"Found {len(links)} links on {category_url}")
-            print("Sample product links:", links[:20])
-
             for url in links:
                 all_urls.add(url)
 
@@ -288,18 +215,11 @@ def run_plnts_scrape(category_urls: List[str]) -> dict:
         browser.close()
 
     return {
+        "shopCode": shop_code,
+        "success": True,
         "totalFound": len(all_urls),
         "successCount": success_count,
         "failCount": fail_count,
         "products": products,
         "errors": errors,
     }
-
-
-def run():
-    result = run_plnts_scrape(CATEGORY_URLS)
-    print(result)
-
-
-if __name__ == "__main__":
-    run()
